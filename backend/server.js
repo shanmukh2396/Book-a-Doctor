@@ -42,13 +42,23 @@ const seedAdmin = async () => {
   try {
     const adminExists = await User.findOne({ role: 'admin' });
     if (!adminExists) {
+      const seedEmail = process.env.ADMIN_SEED_EMAIL;
+      const seedPassword = process.env.ADMIN_SEED_PASSWORD;
+
+      if (!seedEmail || !seedPassword) {
+        console.warn(
+          'Skipping admin seed: set ADMIN_SEED_EMAIL and ADMIN_SEED_PASSWORD in your .env to create the initial admin account.'
+        );
+        return;
+      }
+
       await User.create({
         name: 'System Admin',
-        email: 'admin@doctor.com',
-        password: 'adminpassword123', // Will be hashed pre-save
+        email: seedEmail,
+        password: seedPassword, // Will be hashed pre-save
         role: 'admin',
       });
-      console.log('Admin account seeded successfully (admin@doctor.com / adminpassword123)');
+      console.log(`Admin account seeded successfully (${seedEmail})`);
     }
   } catch (error) {
     console.error('Seed Admin error:', error);
