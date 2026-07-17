@@ -6,23 +6,43 @@ const { protect } = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
+// Generate JWT Token
 const generateToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET || 'supersecretkeyforbookadoctorapp', {
-    expiresIn: '30d',
-  });
+  return jwt.sign(
+    { id },
+    process.env.JWT_SECRET || 'supersecretkeyforbookadoctorapp',
+    {
+      expiresIn: '30d',
+    }
+  );
 };
 
+// ==========================================================
 // @route   POST /api/auth/register
-// @desc    Register a user (Patient or Doctor)
+// @desc    Register Patient or Doctor
 // @access  Public
+// ==========================================================
 router.post('/register', async (req, res) => {
-  const { name, email, password, role, specialization, experience, hourlyRate, description } = req.body;
+  const {
+    name,
+    email,
+    password,
+    role,
+    specialization,
+    experience,
+    hourlyRate,
+    description,
+  } = req.body;
 
   try {
+    // Check existing user
     const userExists = await User.findOne({ email });
 
     if (userExists) {
-      return res.status(400).json({ success: false, message: 'User already exists' });
+      return res.status(400).json({
+        success: false,
+        message: 'User already exists',
+      });
     }
 
     // Create user
@@ -33,55 +53,53 @@ router.post('/register', async (req, res) => {
       role: role || 'patient',
     });
 
-    if (user) {
-      // If role is doctor, create doctor profile linked to user
-      if (user.role === 'doctor') {
-        if (!specialization || !experience || !hourlyRate) {
-          // Clean up user if fields are missing
-          await User.findByIdAndDelete(user._id);
-          return res.status(400).json({
-            success: false,
-            message: 'Specialization, experience, and hourly rate are required for doctor registration',
-          });
-        }
+    // If doctor, create doctor profile
+    if (user.role === 'doctor') {
+      if (!specialization || !experience || !hourlyRate) {
+        await User.findByIdAndDelete(user._id);
 
-        await DoctorProfile.create({
-          user: user._id,
-          specialization,
-          experience: Number(experience),
-          hourlyRate: Number(hourlyRate),
-          description: description || '',
-          isApproved: false, // Must be approved by Admin
+        return res.status(400).json({
+          success: false,
+          message:
+            'Specialization, experience and hourly rate are required.',
         });
       }
 
-      res.status(201).json({
-        success: true,
-        _id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        token: generateToken(user._id),
+      await DoctorProfile.create({
+        user: user._id,
+        specialization,
+        experience: Number(experience),
+        hourlyRate: Number(hourlyRate),
+        description: description || '',
+        isApproved: true, // ✅ Automatically Approved
       });
-    } else {
-      res.status(400).json({ success: false, message: 'Invalid user data' });
     }
-  } catch (error) {
-  console.error("REGISTER ERROR:");
-  console.error(error);
-  console.error(error.stack);
 
-  return res.status(500).json({
-    success: false,
-    error: error.message,
-    stack: process.env.NODE_ENV === "development" ? error.stack : undefined
-  });
-}
+    return res.status(201).json({
+      success: true,
+      message: 'Registration Successful',
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      token: generateToken(user._id),
+    });
+  } catch (error) {
+    console.error('========== REGISTER ERROR ==========');
+    console.error(error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
 });
 
+// ==========================================================
 // @route   POST /api/auth/login
-// @desc    Authenticate user & get token
+// @desc    Login User
 // @access  Public
+// ==========================================================
 router.post('/login', async (req, res) => {
   const { email, password } = req.body;
 
@@ -90,55 +108,77 @@ router.post('/login', async (req, res) => {
 
     if (user && (await user.matchPassword(password))) {
       let doctorProfile = null;
+
       if (user.role === 'doctor') {
-        doctorProfile = await DoctorProfile.findOne({ user: user._id });
+        doctorProfile = await DoctorProfile.findOne({
+          user: user._id,
+        });
       }
 
-      res.json({
+      return res.json({
         success: true,
         _id: user._id,
         name: user.name,
         email: user.email,
         role: user.role,
         token: generateToken(user._id),
-        doctorProfile: doctorProfile,
+        doctorProfile,
       });
-    } else {
-      res.status(401).json({ success: false, message: 'Invalid email or password' });
     }
+
+    return res.status(401).json({
+      success: false,
+      message: 'Invalid email or password',
+    });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ success: false, message: 'Server error: ' + error.message });
+
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
   }
 });
 
+// ==========================================================
 // @route   GET /api/auth/me
-// @desc    Get user profile data
+// @desc    Get Logged-in User
 // @access  Private
+// ==========================================================
 router.get('/me', protect, async (req, res) => {
   try {
     const user = await User.findById(req.user._id);
 
-    if (user) {
-      let doctorProfile = null;
-      if (user.role === 'doctor') {
-        doctorProfile = await DoctorProfile.findOne({ user: req.user._id });
-      }
-
-      res.json({
-        success: true,
-        _id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        doctorProfile: doctorProfile,
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
       });
-    } else {
-      res.status(404).json({ success: false, message: 'User not found' });
     }
+
+    let doctorProfile = null;
+
+    if (user.role === 'doctor') {
+      doctorProfile = await DoctorProfile.findOne({
+        user: user._id,
+      });
+    }
+
+    return res.json({
+      success: true,
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      doctorProfile,
+    });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ success: false, message: 'Server error' });
+
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
   }
 });
 
