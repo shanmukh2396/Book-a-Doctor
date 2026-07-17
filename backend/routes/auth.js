@@ -67,9 +67,16 @@ router.post('/register', async (req, res) => {
       res.status(400).json({ success: false, message: 'Invalid user data' });
     }
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ success: false, message: 'Server error: ' + error.message });
-  }
+  console.error("REGISTER ERROR:");
+  console.error(error);
+  console.error(error.stack);
+
+  return res.status(500).json({
+    success: false,
+    error: error.message,
+    stack: process.env.NODE_ENV === "development" ? error.stack : undefined
+  });
+}
 });
 
 // @route   POST /api/auth/login
